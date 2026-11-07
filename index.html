@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>English Words Dictionary</title>
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16181a" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="dict.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 13.5l1.6 1.2-2 3.4-1.9-.7a7 7 0 0 1-1.7 1l-.3 2h-4l-.3-2a7 7 0 0 1-1.7-1l-1.9.7-2-3.4 1.6-1.2a7 7 0 0 1 0-2L3 10.3l2-3.4 1.9.7a7 7 0 0 1 1.7-1l.3-2h4l.3 2a7 7 0 0 1 1.7 1l1.9-.7 2 3.4-1.6 1.2a7 7 0 0 1 0 2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+</svg>
+
+<header id="bar">
+  <label class="search">
+    <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+    <input id="q" type="search" placeholder="English, tiếng Việt, or a description" aria-label="Search"
+           autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+  </label>
+  <button id="viAll" class="chip" type="button" aria-pressed="false" title="Show or hide all Vietnamese meanings">VI</button>
+  <button id="where" class="chip" type="button" title="Go to a unit or page">W01</button>
+  <button id="gear" class="icon" type="button" aria-label="Settings"><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg></button>
+</header>
+
+<main id="book" aria-label="Words in book order"></main>
+<section id="results" aria-live="polite" hidden></section>
+
+<dialog id="jump">
+  <form method="dialog" class="dlg">
+    <div class="row"><label>Page <input id="jumpPage" type="number" inputmode="numeric" min="2" max="138"></label>
+      <button id="jumpGo" type="button">Go</button><span class="grow"></span><button value="close" aria-label="Close">Close</button></div>
+    <div id="units"></div>
+  </form>
+</dialog>
+
+<dialog id="settings">
+  <form method="dialog" class="dlg">
+    <h2>Settings</h2>
+    <div class="row"><span class="grow">Text size</span><button id="sizeDown" type="button" aria-label="Smaller text">A−</button><button id="sizeUp" type="button" aria-label="Larger text">A+</button></div>
+    <div class="row"><label class="grow"><input id="setVi" type="checkbox"> Show all Vietnamese meanings</label></div>
+    <h3>Offline audio</h3>
+    <div class="row"><span id="audioState" class="grow">Words you play are saved on this device.</span><button id="audioAll" type="button">Save all</button></div>
+    <h3>Reports</h3>
+    <div class="row"><span id="reportCount" class="grow"></span></div>
+    <div class="row wrap"><button id="reportShare" type="button">Share</button><button id="reportCopy" type="button">Copy</button><button id="reportFile" type="button">Download</button><button id="reportClear" type="button">Clear</button></div>
+    <p class="fine">Audio is the AI voice Jon (US). Definitions and examples are AI-written and still being checked. <span id="build"></span></p>
+    <div class="row"><span class="grow"></span><button value="close">Close</button></div>
+  </form>
+</dialog>
+
+<dialog id="report">
+  <form method="dialog" class="dlg">
+    <h2 id="reportTitle">Report</h2>
+    <div class="col">
+      <label><input type="radio" name="rtype" value="missing_word"> This word is missing</label>
+      <label><input type="radio" name="rtype" value="wrong_result"> Search didn't find the word I meant</label>
+      <label><input type="radio" name="rtype" value="wrong_content"> Something on this card is wrong</label>
+    </div>
+    <label class="col">Note (optional)<textarea id="reportNote" rows="3"></textarea></label>
+    <div class="row"><span class="grow"></span><button value="cancel">Cancel</button><button id="reportSave" type="button">Save</button></div>
+  </form>
+</dialog>
+
+<div id="toast" role="status" hidden></div>
+<noscript><p style="padding:1rem">This dictionary needs JavaScript.</p></noscript>
+<script src="search.js"></script>
+<script src="data.js"></script>
+<script src="dict.js"></script>
+</body>
+</html>
