@@ -47,13 +47,17 @@
 
   // ---------- rendering ----------
   const tools = (i) => `<span class="tools"><button type="button" data-a="play" data-i="${i}" aria-label="Listen"><svg class="ic" aria-hidden="true"><use href="#i-sound"/></svg></button><button type="button" data-a="vi" data-i="${i}" class="${showAllVi || openVi.has(i) ? "on" : ""}" aria-label="Show Vietnamese meaning">vi</button><button type="button" data-a="more" data-i="${i}" aria-label="More"><svg class="ic" aria-hidden="true"><use href="#i-more"/></svg></button></span>`;
-  const ipa = (e) => (e.i ? `<span class="ipa">/${esc(e.i)}/${e.a ? "<sup>*</sup>" : ""}</span>` : "");
+  const ipa = (e, hl) => {
+    if (!e.i) return "";
+    const body = hl ? `${esc(e.i.slice(0, hl[0]))}<mark>${esc(e.i.slice(hl[0], hl[1]))}</mark>${esc(e.i.slice(hl[1]))}` : esc(e.i);
+    return `<span class="ipa">/${body}/${e.a ? "<sup>*</sup>" : ""}</span>`;
+  };
   const viHtml = (e, i) => (e.vi ? `<div class="vi" data-vi="${i}"${showAllVi || openVi.has(i) ? "" : " hidden"}>${esc(e.vi)}</div>` : "");
 
-  function cardHtml(i, extra = "") {
+  function cardHtml(i, extra = "", hl = null) {
     const e = entries[i];
-    if (e.own === false) return familyAsCard(i, extra);
-    let s = `<article class="e" id="w${i}" data-card="${i}">${tools(i)}<span class="w">${esc(e.w)}</span> ${ipa(e)} <i class="pos">${esc(e.p)}</i> <span class="def">${esc(e.def)}</span>${viHtml(e, i)}`;
+    if (e.own === false) return familyAsCard(i, extra, hl);
+    let s = `<article class="e" id="w${i}" data-card="${i}">${tools(i)}<span class="w">${esc(e.w)}</span> ${ipa(e, hl)} <i class="pos">${esc(e.p)}</i> <span class="def">${esc(e.def)}</span>${viHtml(e, i)}`;
     if (e.x) s += `<div class="ex">${esc(e.x)}</div>`;
     for (const f of e.f) {
       const m = entries[f];
@@ -64,9 +68,9 @@
     }
     return s + extra + "</article>";
   }
-  function familyAsCard(i, extra) {
+  function familyAsCard(i, extra, hl) {
     const e = entries[i];
-    return `<article class="e" data-card="${i}">${tools(i)}<span class="w">${esc(e.w)}</span>${e.b ? ' <span class="bang">!</span>' : ""} ${ipa(e)} <i class="pos">${esc(e.p)}</i> <span class="def">${esc(e.def)}</span>${viHtml(e, i)}${extra}</article>`;
+    return `<article class="e" data-card="${i}">${tools(i)}<span class="w">${esc(e.w)}</span>${e.b ? ' <span class="bang">!</span>' : ""} ${ipa(e, hl)} <i class="pos">${esc(e.p)}</i> <span class="def">${esc(e.def)}</span>${viHtml(e, i)}${extra}</article>`;
   }
 
   // ---------- book view: one section per printed page, filled when near the viewport ----------
@@ -163,7 +167,9 @@
   const LABEL = {
     personal: "Saved by you", word: "Exact word", form: "Word form", meaning: "Exact meaning", key: "Other meanings and wordings",
     prefix: "Starts with", contains: "Meaning contains", typo: "Did you mean", describe: "By description",
+    ipa: "Same sound", ipaStart: "Sound starts with", ipaHas: "Sound contains", ipaNear: "Similar sound",
   };
+  const isIpa = (q) => window.DictSearch.isIpaQuery(q);
   const qBox = $("q");
   const results = $("results");
   let lastQuery = "";
@@ -203,7 +209,11 @@
     const list = lastHits.slice(0, shown);
     let out = "";
     let tier = null;
-    if (!list.length) out += `<p class="nope">No match for “${esc(q)}”.</p>`;
+    const iq = window.DictSearch.ipaQuery(q);
+    const bare = iq && !iq.units.length;
+    if (bare) out += '<p class="nope">Type sounds after /, for example <b>/ˈfæməli/</b> or <b>/faemli</b>. Tap <b>ə</b> in the search box for IPA keys.</p>';
+    else if (iq) out += `<p class="ipaq">Sound search: <b>/${esc(iq.show)}/</b> · stress and ː don't matter</p>`;
+    if (!list.length && !bare) out += `<p class="nope">No match for “${esc(q)}”.</p>`;
     for (const h of list) {
       const label = h.tier === "key" ? "meaning" : h.tier;
       if (label !== tier) { out += `<h3>${h.tier === "key" || h.tier === "meaning" ? "Exact meaning" : LABEL[h.tier]}</h3>`; tier = label; }
@@ -212,27 +222,71 @@
       const under = e.own === false ? ` · under ${esc(entries[e.h].w)}` : "";
       const pageText = e.g ? `${e.u} · p.${e.g}${under}` : `${e.u}${under}`;
       const meta = `<div class="hitmeta">${h.matched ? `<mark>${esc(h.matched)}</mark>` : ""}<a href="#" data-a="go" data-i="${i}">${pageText}</a></div>`;
-      out += cardHtml(i, meta).replace(` id="w${i}"`, "");
+      out += cardHtml(i, meta, h.span).replace(` id="w${i}"`, "");
     }
     if (lastHits.length > shown) out += `<div class="next"><button type="button" data-a="showmore">Show more (${lastHits.length - shown})</button></div>`;
     const ascii = /^[a-zA-Z' -]+$/.test(q);
-    out += `<div class="next"><span>Not the word you need?</span><button type="button" data-a="report-query">Report</button><a href="${esc(askAiUrl(q))}" target="_blank" rel="noopener" data-a="ask">Ask AI</a>${ascii ? `<a href="${esc(cambridgeUrl(q))}" target="_blank" rel="noopener" data-a="ext">Cambridge</a>` : ""}</div>`;
+    if (!bare) out += `<div class="next"><span>Not the word you need?</span><button type="button" data-a="report-query">Report</button><a href="${esc(askAiUrl(q))}" target="_blank" rel="noopener" data-a="ask">Ask AI</a>${ascii ? `<a href="${esc(cambridgeUrl(q))}" target="_blank" rel="noopener" data-a="ext">Cambridge</a>` : ""}</div>`;
     results.innerHTML = out;
   }
   function clearSearch() { qBox.value = ""; runSearch(); }
 
   let timer = 0;
   qBox.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(runSearch, 70); });
+  // "/" or Ctrl+K (Cmd+K) jumps to the search box from anywhere; Esc clears it, a second Esc leaves it.
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "/" && document.activeElement !== qBox && !document.querySelector("dialog[open]") && document.activeElement?.tagName !== "TEXTAREA") { ev.preventDefault(); qBox.focus(); qBox.select(); }
-    if (ev.key === "Escape" && document.activeElement === qBox) clearSearch();
+    const el = document.activeElement;
+    const typing = el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
+    const ctrlK = (ev.ctrlKey || ev.metaKey) && !ev.altKey && ev.key.toLowerCase() === "k";
+    if ((ctrlK || (ev.key === "/" && !typing && !ev.ctrlKey && !ev.metaKey && !ev.altKey)) && !document.querySelector("dialog[open]")) {
+      ev.preventDefault();
+      qBox.focus();
+      qBox.select();
+      return;
+    }
+    if (ev.key === "Escape" && el === qBox) { if (qBox.value) clearSearch(); else qBox.blur(); }
+  });
+  // Clear button: one tap empties the box and keeps the keyboard up.
+  $("qClear").addEventListener("pointerdown", (ev) => ev.preventDefault());
+  $("qClear").addEventListener("click", () => {
+    qBox.value = !pad.hidden && isIpa(qBox.value) ? "/" : "";
+    runSearch();
+    qBox.focus();
+  });
+
+  // ---------- IPA keys: tap a sound to add it; the small code is how to type it on a keyboard ----------
+  const IPA_KEYS = [["i", "i"], ["ɪ", "ih"], ["e", "e"], ["æ", "ae"], ["ɑ", "aa"], ["ɔ", "aw"], ["ʌ", "uh"], ["ə", "@"], ["ɚ", "er"], ["ʊ", "oo"], ["u", "u"],
+    ["eɪ", "ei"], ["aɪ", "ai"], ["ɔɪ", "oi"], ["oʊ", "ou"], ["aʊ", "au"], ["θ", "th"], ["ð", "dh"], ["ʃ", "sh"], ["ʒ", "zh"], ["tʃ", "ch"], ["dʒ", "j"], ["j", "y"], ["ŋ", "ng"]];
+  const pad = $("ipaPad");
+  $("ipaKeys").innerHTML = IPA_KEYS.map(([s, c]) => `<button type="button" data-ipa="${s}" title="${s}: type ${esc(c)}"><b>${s}</b><small>${esc(c)}</small></button>`).join("");
+  function setPad(open) {
+    pad.hidden = !open;
+    $("ipaBtn").setAttribute("aria-pressed", String(open));
+    if (open && !qBox.value.trim()) { qBox.value = "/"; runSearch(); }
+    if (!open && qBox.value.trim() === "/") clearSearch();
+  }
+  $("ipaBtn").addEventListener("click", () => { setPad(pad.hidden); if (!pad.hidden && wide()) qBox.focus(); });
+  $("ipaKeys").addEventListener("pointerdown", (ev) => { if (ev.target.closest("[data-ipa]")) ev.preventDefault(); });
+  $("ipaKeys").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-ipa]");
+    if (!b) return;
+    const focused = document.activeElement === qBox;
+    const lead = qBox.value.length - qBox.value.trimStart().length;
+    let v = qBox.value.trimStart();
+    let a = focused ? Math.max(0, qBox.selectionStart - lead) : v.length;
+    let z = focused ? Math.max(a, qBox.selectionEnd - lead) : v.length;
+    if (!v.startsWith("/")) { v = "/" + v; a++; z++; }
+    qBox.value = v.slice(0, a) + b.dataset.ipa + v.slice(z);
+    if (focused) qBox.setSelectionRange(a + b.dataset.ipa.length, a + b.dataset.ipa.length);
+    runSearch();
   });
 
   // ---------- links ----------
   const cambridgeUrl = (w) => "https://dictionary.cambridge.org/us/dictionary/english/" + encodeURIComponent(w.trim().toLowerCase().replace(/\s+/g, "-"));
   const clipartUrl = (w) => "https://www.google.com/search?udm=2&q=" + encodeURIComponent("clipart " + w);
   function aiPrompt(q) {
-    return `I am a Vietnamese English learner (A2-B1, American English). I'm looking for an English word or phrase. My description: "${q}".\n` +
+    const what = isIpa(q) ? `It sounds roughly like ${q.trim()} (my rough US IPA; codes like ae = æ, sh = ʃ, th = θ/ð may appear).` : `My description: "${q}".`;
+    return `I am a Vietnamese English learner (A2-B1, American English). I'm looking for an English word or phrase. ${what}\n` +
       "Reply in simple English, 1 to 3 lines per candidate:\n**word** /US IPA/: short definition.\n*One natural example sentence.*\nGive up to 3 candidates, best first.";
   }
   const askAiUrl = (q) => "https://claude.ai/new?q=" + encodeURIComponent(aiPrompt(q));
@@ -338,7 +392,7 @@
     div.innerHTML = `<a href="${esc(cambridgeUrl(e.w))}" target="_blank" rel="noopener" data-a="ext" data-win="dict_cam">Cambridge</a>` +
       `<a href="${esc(clipartUrl(e.w))}" target="_blank" rel="noopener" data-a="ext" data-win="dict_img">Clipart</a>` +
       `<button type="button" data-a="report" data-i="${i}">Report</button>` +
-      (lastQuery && !results.hidden && !e.w.toLowerCase().includes(lastQuery.toLowerCase()) ? `<button type="button" data-a="remember" data-i="${i}">Remember “${esc(lastQuery)}”</button>` : "");
+      (lastQuery && !results.hidden && !isIpa(lastQuery) && !e.w.toLowerCase().includes(lastQuery.toLowerCase()) ? `<button type="button" data-a="remember" data-i="${i}">Remember “${esc(lastQuery)}”</button>` : "");
     host.append(div);
   }
   document.addEventListener("click", (ev) => {

@@ -95,7 +95,67 @@
     return { senses, notes };
   }
 
-  const TIER = { personal: 0, word: 1, form: 2, meaning: 3, key: 3, prefix: 4, contains: 5, typo: 6, describe: 7 };
+  // ---------- sound (IPA) search ----------
+  // The same folds run on the data and the query, so stress, length marks and spelling variants never block a match.
+  const IPA_DROP = /[ˈˌːˑ˞.'’:\s()\-/[\]]|\p{M}/u;
+  const IPA_FOLDS = [["ər", "ɚ"], ["əʊ", "oʊ"], ["ɑɪ", "aɪ"], ["ɝ", "ɚ"], ["ɜ", "ɚ"], ["ɒ", "ɑ"], ["ɛ", "e"], ["ɹ", "r"], ["ɡ", "g"], ["ʧ", "tʃ"], ["ʤ", "dʒ"], ["ɐ", "ə"], ["ɫ", "l"], ["ɾ", "t"], ["ᵻ", "ɪ"]];
+  // Canonical sound string plus, for each of its characters, the index in the raw text (for highlighting).
+  function ipaCanon(raw) {
+    const src = String(raw || "").toLowerCase();
+    const kept = [];
+    for (let k = 0; k < src.length; k++) if (!IPA_DROP.test(src[k])) kept.push(k);
+    let s = "";
+    const at = [];
+    for (let k = 0; k < kept.length;) {
+      const fold = IPA_FOLDS.find(([from]) => [...from].every((c, j) => src[kept[k + j]] === c));
+      const to = fold ? fold[1] : src[kept[k]];
+      for (const c of to) { s += c; at.push(kept[k]); }
+      k += fold ? fold[0].length : 1;
+    }
+    return { s, at };
+  }
+
+  // Keyboard codes for sounds a laptop keyboard can't type. A code also keeps its plain letters,
+  // so "th" finds θ, ð and t+h alike and no code can hide a real match.
+  const IPA_CODES = [
+    ["ae", ["æ"]], ["aa", ["ɑ"]], ["uh", ["ʌ"]], ["er", ["ɚ"]], ["ih", ["ɪ"]], ["oo", ["ʊ", "u"]], ["aw", ["ɔ"]], ["eh", ["e"]],
+    ["ei", ["eɪ"]], ["ai", ["aɪ"]], ["oi", ["ɔɪ"]], ["ou", ["oʊ"]], ["au", ["aʊ"]],
+    ["th", ["θ", "ð"]], ["dh", ["ð"]], ["sh", ["ʃ"]], ["zh", ["ʒ"]], ["ch", ["tʃ"]], ["ng", ["ŋg", "ŋ"]],
+    ["j", ["dʒ"]], ["y", ["j"]], ["c", ["k", "s"]], ["x", ["ks", "gz"]], ["q", ["k"]],
+  ];
+  // "Sounds similar": vowels learners often mix up, and th voiced/unvoiced.
+  // American t between vowels sounds close to d, so t and d count as similar too.
+  const IPA_NEAR = { i: "iɪə", ɪ: "ɪiə", u: "uʊ", ʊ: "ʊu", e: "eæ", æ: "æeɑ", ɑ: "ɑɔʌaæ", a: "aɑæʌ", o: "oɔɑ", ɔ: "ɔɑo", ʌ: "ʌəɑ", ə: "əʌɪi", θ: "θð", ð: "ðθ", t: "td", d: "dt" };
+  // Plain letters that are also IPA symbols; a code's own letters are shown as a reading only when they are.
+  const IPA_ASCII = /^[abdefghijklmnoprstuvwz]+$/;
+  const IPA_CHARS = /[æɑʌəɚɝɜɪʊɛɔɒθðʃʒŋˈˌːɡ]/;
+  const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const isIpaQuery = (raw) => /^\s*[/[]/.test(String(raw || "")) || IPA_CHARS.test(String(raw || ""));
+  function ipaQuery(raw) {
+    if (!isIpaQuery(raw)) return null;
+    const s = ipaCanon(String(raw).replace(/@/g, "ə")).s;
+    const units = [];
+    for (let k = 0; k < s.length;) {
+      const code = IPA_CODES.find(([c]) => s.startsWith(c, k));
+      if (code) {
+        const plain = IPA_ASCII.test(code[0]) ? [code[0]] : [];
+        units.push({ show: [...code[1], ...plain].join("/"), alts: [...new Set([...code[1], code[0]])] });
+        k += code[0].length;
+      } else {
+        units.push({ show: s[k], alts: [s[k]] });
+        k++;
+      }
+    }
+    const group = (alts) => (alts.length > 1 ? `(?:${alts.join("|")})` : alts[0]);
+    const strict = units.map((u) => group(u.alts.map(reEsc))).join("");
+    const nearUnits = units.map((u) => group(u.alts.map((a) => [...a].map((c) => (IPA_NEAR[c] ? `[${IPA_NEAR[c]}]` : c === "ɚ" ? "(?:ɚ|r)" : reEsc(c))).join(""))));
+    // Last resort: an unstressed ə or ɪ the learner didn't type ("faemli" → fæməli).
+    const loose = nearUnits.join("[əɪ]?");
+    return { units, show: units.map((u) => (u.show.includes("/") ? `(${u.show})` : u.show)).join(""), strict, near: nearUnits.join(""), loose };
+  }
+
+  const TIER = { personal: 0, word: 1, ipa: 1, form: 2, meaning: 3, key: 3, prefix: 4, ipaStart: 4, contains: 5, ipaHas: 5, typo: 6, ipaNear: 6, describe: 7 };
 
   function createIndex(entries) {
     const docs = entries.map((e, id) => {
@@ -144,9 +204,40 @@
     const personal = new Map();
     const addPersonal = (query, id) => add(personal, nfc(query), id);
 
+    let sounds = null; // built on the first sound search
+    function searchIpa(iq, limit) {
+      if (!iq.units.length) return [];
+      if (!sounds) sounds = docs.filter((d) => d.e.i).map((d) => ({ d, ...ipaCanon(d.e.i) }));
+      const strict = new RegExp(iq.strict);
+      const near = new RegExp(iq.near);
+      const loose = new RegExp(iq.loose);
+      const out = [];
+      for (const x of sounds) {
+        let m = strict.exec(x.s);
+        let tier;
+        let score;
+        if (m) {
+          const extra = x.s.length - m[0].length;
+          if (!extra) { tier = "ipa"; score = 100; } else if (m.index === 0) { tier = "ipaStart"; score = 80 - Math.min(20, extra); } else { tier = "ipaHas"; score = 60 - Math.min(m.index, 10) - Math.min(10, extra / 2); }
+        } else if ((m = near.exec(x.s) || loose.exec(x.s))) {
+          const extra = x.s.length - m[0].length;
+          score = (!extra ? 45 : m.index === 0 ? 35 - Math.min(10, extra) : 25 - Math.min(m.index, 10)) - Math.min(5, extra / 4) - (near.test(x.s) ? 0 : 12);
+          tier = "ipaNear";
+        } else continue;
+        let end = x.at[m.index + m[0].length - 1] + 1;
+        while (end < x.d.e.i.length && /[ːˑ˞]|\p{M}/u.test(x.d.e.i[end])) end++; // keep t̬ and ː whole
+        out.push({ id: x.d.id, entry: x.d.e, tier, score: score + (x.d.own ? 0.5 : 0), matched: null, span: [x.at[m.index], end] });
+      }
+      return out
+        .sort((a, b) => TIER[a.tier] - TIER[b.tier] || b.score - a.score || (a.entry.order ?? 1e9) - (b.entry.order ?? 1e9))
+        .slice(0, limit);
+    }
+
     function search(raw, { limit = 40 } = {}) {
       const q0 = nfc(raw);
       if (!q0) return [];
+      const iq = ipaQuery(raw);
+      if (iq) return searchIpa(iq, limit);
       const q = core(q0);
       const hasMark = q !== flat(q);
       const qt = tokens(q);
@@ -225,5 +316,5 @@
     return { search, addPersonal, size: docs.length };
   }
 
-  root.DictSearch = { createIndex, nfc, flat, tokens, splitMeaning, editDistance, wordForms, stem, TIER };
+  root.DictSearch = { createIndex, nfc, flat, tokens, splitMeaning, editDistance, wordForms, stem, TIER, ipaCanon, ipaQuery, isIpaQuery };
 })(globalThis);

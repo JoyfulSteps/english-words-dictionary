@@ -21,13 +21,20 @@
 <header id="bar">
   <label class="search">
     <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
-    <input id="q" type="search" placeholder="English, tiếng Việt, or a description" aria-label="Search"
+    <input id="q" type="search" placeholder="English, tiếng Việt, description, /IPA/" aria-label="Search"
            autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+    <kbd class="hint" title="Press / or Ctrl+K to search">/</kbd>
+    <button id="qClear" class="in" type="button" aria-label="Clear search">×</button>
+    <button id="ipaBtn" class="in" type="button" aria-label="IPA keys" aria-pressed="false" aria-controls="ipaPad" title="IPA keys">ə</button>
   </label>
   <button id="viAll" class="chip" type="button" aria-pressed="false" title="Show or hide all Vietnamese meanings">VI</button>
   <button id="where" class="chip" type="button" title="Go to a unit or page">W01</button>
   <button id="gear" class="icon" type="button" aria-label="Settings"><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg></button>
 </header>
+<div id="ipaPad" hidden>
+  <div id="ipaKeys"></div>
+  <p class="fine">Search by sound: start with <b>/</b>. The small letters show how to type each sound on a keyboard. Stress marks and ː are optional.</p>
+</div>
 
 <main id="book" aria-label="Words in book order"></main>
 <section id="results" aria-live="polite" hidden></section>

@@ -6,7 +6,7 @@ const index = self.DictSearch.createIndex(self.DICT.e);
 self.onmessage = ({ data }) => {
   if (data.type === "add") index.addPersonal(data.query, data.id);
   if (data.type === "search") {
-    const hits = index.search(data.q, { limit: data.limit }).map((h) => ({ id: h.id, tier: h.tier, matched: h.matched }));
+    const hits = index.search(data.q, { limit: data.limit }).map((h) => ({ id: h.id, tier: h.tier, matched: h.matched, span: h.span }));
     self.postMessage({ seq: data.seq, hits });
   }
 };

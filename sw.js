@@ -1,5 +1,5 @@
-// Offline support (F-218). 91f30d445c is filled in by tools/build_dictionary.py, so each build refreshes the app files.
-const BUILD = "91f30d445c";
+// Offline support (F-218). 1c7f93dd48 is filled in by tools/build_dictionary.py, so each build refreshes the app files.
+const BUILD = "1c7f93dd48";
 const APP_CACHE = "dict-app-" + BUILD;
 const AUDIO_CACHE = "dict-audio-v1";
 const APP_FILES = ["./", "index.html", "dict.css", "dict.js", "search.js", "search-worker.js", "data.js", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png"];
