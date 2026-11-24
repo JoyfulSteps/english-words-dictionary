@@ -1,8 +1,8 @@
-// Offline support (F-218). 1c7f93dd48 is filled in by tools/build_dictionary.py, so each build refreshes the app files.
-const BUILD = "1c7f93dd48";
+// Offline support (F-218). 7b19788490 is filled in by tools/build_dictionary.py, so each build refreshes the app files.
+const BUILD = "7b19788490";
 const APP_CACHE = "dict-app-" + BUILD;
 const AUDIO_CACHE = "dict-audio-v1";
-const APP_FILES = ["./", "index.html", "dict.css", "dict.js", "search.js", "search-worker.js", "data.js", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png"];
+const APP_FILES = ["./", "index.html", "dict.css", "dict.js", "search.js", "search-worker.js", "data.js", "story-find.js", "story-data.js", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (ev) => {
   ev.waitUntil(caches.open(APP_CACHE).then((c) => c.addAll(APP_FILES)).then(() => self.skipWaiting()));

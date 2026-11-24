@@ -1,4 +1,5 @@
 // Dictionary page (F-218): book view in print order, search, audio, per-word actions, reports, offline.
+// F-231: "In the stories": sentences from the story sites (story-data.js, loaded on first use) with links to the exact sentence.
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
@@ -46,7 +47,7 @@
   }
 
   // ---------- rendering ----------
-  const tools = (i) => `<span class="tools"><button type="button" data-a="play" data-i="${i}" aria-label="Listen"><svg class="ic" aria-hidden="true"><use href="#i-sound"/></svg></button><button type="button" data-a="vi" data-i="${i}" class="${showAllVi || openVi.has(i) ? "on" : ""}" aria-label="Show Vietnamese meaning">vi</button><button type="button" data-a="more" data-i="${i}" aria-label="More"><svg class="ic" aria-hidden="true"><use href="#i-more"/></svg></button></span>`;
+  const tools = (i) => `<span class="tools"><button type="button" data-a="play" data-i="${i}" aria-label="Listen"><svg class="ic" aria-hidden="true"><use href="#i-sound"/></svg></button><button type="button" data-a="story" data-i="${i}" aria-label="In the stories" title="In the stories"><svg class="ic" aria-hidden="true"><use href="#i-book"/></svg></button><button type="button" data-a="vi" data-i="${i}" class="${showAllVi || openVi.has(i) ? "on" : ""}" aria-label="Show Vietnamese meaning">vi</button><button type="button" data-a="more" data-i="${i}" aria-label="More"><svg class="ic" aria-hidden="true"><use href="#i-more"/></svg></button></span>`;
   const ipa = (e, hl) => {
     if (!e.i) return "";
     const body = hl ? `${esc(e.i.slice(0, hl[0]))}<mark>${esc(e.i.slice(hl[0], hl[1]))}</mark>${esc(e.i.slice(hl[1]))}` : esc(e.i);
@@ -213,7 +214,16 @@
     const bare = iq && !iq.units.length;
     if (bare) out += '<p class="nope">Type sounds after /, for example <b>/ˈfæməli/</b> or <b>/faemli</b>. Tap <b>ə</b> in the search box for IPA keys.</p>';
     else if (iq) out += `<p class="ipaq">Sound search: <b>/${esc(iq.show)}/</b> · stress and ː don't matter</p>`;
-    if (!list.length && !bare) out += `<p class="nope">No match for “${esc(q)}”.</p>`;
+    const realHit = list.find((h) => h.tier === "personal" || h.tier === "word" || h.tier === "form");
+    const storyQ = !iq && /^[a-z][a-z'’ -]*$/i.test(q) && q.length >= 2;
+    let storyBlock = "";
+    if (storyQ && !realHit) {
+      if (storyIx) {
+        if (storyIx.find(q).total) storyBlock = `<div class="stq"><p class="nope">“${esc(q)}” is not in the word list, but it is in the stories.</p>${storyPanel(q, -1, panelMode.get(q + "|-1") || "full")}</div>`;
+      } else whenStories(q);
+    }
+    if (!list.length && !bare && !storyBlock) out += `<p class="nope">No match for “${esc(q)}”.</p>`;
+    out += storyBlock;
     for (const h of list) {
       const label = h.tier === "key" ? "meaning" : h.tier;
       if (label !== tier) { out += `<h3>${h.tier === "key" || h.tier === "meaning" ? "Exact meaning" : LABEL[h.tier]}</h3>`; tier = label; }
@@ -221,7 +231,12 @@
       const i = idOf.get(e);
       const under = e.own === false ? ` · under ${esc(entries[e.h].w)}` : "";
       const pageText = e.g ? `${e.u} · p.${e.g}${under}` : `${e.u}${under}`;
-      const meta = `<div class="hitmeta">${h.matched ? `<mark>${esc(h.matched)}</mark>` : ""}<a href="#" data-a="go" data-i="${i}">${pageText}</a></div>`;
+      let meta = `<div class="hitmeta">${h.matched ? `<mark>${esc(h.matched)}</mark>` : ""}<a href="#" data-a="go" data-i="${i}">${pageText}</a></div>`;
+      const mode = panelMode.get(e.w + "|" + i);
+      if (h === realHit && storyQ && mode !== "closed") {   // the word the person most likely meant: its story sentences right away
+        if (storyIx) meta += storyPanel(e.w, i, mode || "compact");
+        else whenStories(q);
+      }
       out += cardHtml(i, meta, h.span).replace(` id="w${i}"`, "");
     }
     if (lastHits.length > shown) out += `<div class="next"><button type="button" data-a="showmore">Show more (${lastHits.length - shown})</button></div>`;
@@ -298,6 +313,119 @@
     const h = Math.min(860, screen.availHeight - 80);
     const win = window.open(a.href, a.dataset.a === "ask" ? "dict_ai" : a.dataset.win || "dict_ext", `popup=yes,width=${w},height=${h},left=${screen.availWidth - w - 20},top=40`);
     if (win) win.focus(); else window.open(a.href, "_blank", "noopener");
+  }
+
+  // ---------- story sentences (F-231) ----------
+  // story-data.js (~1 MB) is loaded the first time it is needed; story-find.js builds the index once.
+  let storyIx = null;
+  let storyWait = null;
+  const panelMode = new Map();   // "word|entry" → compact / full / all / closed, so a re-render keeps what was opened
+  function loadStories() {
+    if (storyIx) return Promise.resolve(storyIx);
+    if (!storyWait) {
+      storyWait = new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "story-data.js";
+        s.onload = () => {
+          try { storyIx = window.DictStories.createIndex(window.DICT_STORIES, entries.map((e) => e.w)); resolve(storyIx); } catch (err) { reject(err); }
+        };
+        s.onerror = () => { storyWait = null; s.remove(); reject(new Error("story-data.js")); };
+        document.head.append(s);
+      });
+    }
+    return storyWait;
+  }
+  function whenStories(q) {   // search results: draw them again once the stories are ready
+    loadStories().then(() => { if (lastQuery === q && !results.hidden) renderResults(); }).catch(() => {});
+  }
+  const LIMITS = { compact: [2, 2], full: [3, 5], all: [1e9, 200] };   // [new-word sentences, other sentences]
+  function storyHits(q, mode) {
+    const r = storyIx.find(q);
+    const [a, b] = LIMITS[mode] || LIMITS.full;
+    return { r, isNew: r.isNew.slice(0, a), more: r.more.slice(0, b) };
+  }
+  function storyLine(h, q, isNew) {
+    const v = storyIx.view(h, q);
+    const st = storyIx.story(h);
+    let text = "";
+    let at = 0;
+    for (const [a, b] of v.spans) { text += esc(v.plain.slice(at, a)) + "<mark>" + esc(v.plain.slice(a, b)) + "</mark>"; at = b; }
+    text += esc(v.plain.slice(at));
+    return `<a class="sl${isNew ? " new" : ""}" href="${esc(storyIx.link(h, q))}" target="_blank" rel="noopener" data-a="ext" data-win="dict_story" title="${esc(`${st.series} · ${st.id} · ${st.title} · sentence ${h.n}`)}"><span class="sid">${esc(st.id)}</span>${text}</a>`;
+  }
+  // q: the word to find (the card's headword, or the search when the word is not in the list); i: its entry, or -1
+  function storyPanel(q, i, mode) {
+    const { r, isNew, more } = storyHits(q, mode);
+    const attrs = `class="st" data-q="${esc(q)}" data-i="${i}" data-mode="${mode}"`;
+    const prompt = storyPrompt(q, i, isNew.concat(more));
+    const foot = `<div class="stf">` +
+      (isNew.length + more.length < r.total ? `<button type="button" data-a="stall">All ${r.total} sentences</button>` : "") +
+      `<button type="button" data-a="aicopy">Copy for AI</button><a href="${esc(askUrl(prompt))}" target="_blank" rel="noopener" data-a="askst">Ask AI</a></div>`;
+    if (!r.total) return `<div ${attrs}><div class="sth"><b>In the stories</b> · not in the stories yet</div>${foot}</div>`;
+    let s = `<div ${attrs}><div class="sth"><b>In the stories</b> · ${r.total} sentence${r.total > 1 ? "s" : ""}${r.stories > 1 ? ` in ${r.stories} stories` : ""}</div>`;
+    if (isNew.length) {
+      const st = storyIx.story(isNew[0]);
+      const one = isNew.every((h) => h.story === isNew[0].story);
+      s += `<div class="stg">${one ? `New word in ${esc(st.id)} · ${esc(st.title)}` : "New word in these stories"}</div>` + isNew.map((h) => storyLine(h, q, true)).join("");
+    }
+    if (more.length) s += `<div class="stg">${isNew.length ? "Also in" : "Sentences"}</div>` + more.map((h) => storyLine(h, q, false)).join("");
+    return s + foot + "</div>";
+  }
+  // A ready-made question for an AI chat: the card, plus the story sentences shown in the panel.
+  function storyPrompt(q, i, hits) {
+    const e = i >= 0 ? entries[i] : null;
+    const word = e ? e.w : q.trim();
+    const lines = hits.slice(0, 8).map((h, k) => `${k + 1}. ${storyIx.view(h, q).plain} (${storyIx.story(h).id})`);
+    let s = `I'm a Vietnamese learner of English (A2-B1, aiming for IELTS 7.0). I read the word "${word}" and I'm still not sure what it means.\n`;
+    const stop = (t) => (/[.!?]$/.test(t) ? t : t + ".");
+    if (e) s += `My dictionary says: ${e.w}${e.i ? ` /${e.i}/` : ""}${e.p ? ` (${e.p})` : ""}: ${stop(e.def || "")}${e.vi ? ` Vietnamese: ${e.vi}.` : ""}${e.x ? ` Example: ${e.x}` : ""}\n`;
+    else s += "It is not in my word list.\n";
+    if (lines.length) s += `Sentences where I met it:\n${lines.join("\n")}\n`;
+    const where = lines.length > 1 ? "each sentence above (say if the meaning changes)" : lines.length ? "the sentence above" : "everyday English";
+    return s + `\nPlease explain in simple English and give the Vietnamese meaning:\n1. What "${word}" means in ${where}.\n` +
+      "2. Is it common? Formal or informal?\n3. Two or three common phrases with it, each with one short example.\n4. A tip to remember it, or a word that is easy to confuse with it.";
+  }
+  const askUrl = (prompt) => "https://claude.ai/new?q=" + encodeURIComponent(prompt);
+  // Card button: open or close the panel under the word (a family word gets its own panel).
+  function toggleStories(host, i) {
+    const key = entries[i].w + "|" + i;
+    const old = host.querySelector(":scope > .st, :scope > .hitmeta > .st");
+    if (old) { old.remove(); panelMode.set(key, "closed"); return; }
+    const box = document.createElement("div");
+    box.className = "st";
+    box.innerHTML = '<div class="sth">Loading the stories…</div>';
+    host.append(box);
+    loadStories().then(() => {
+      panelMode.set(key, "full");
+      box.outerHTML = storyPanel(entries[i].w, i, "full");
+    }).catch(() => { box.innerHTML = "<div class=\"sth\">Couldn't load the stories. Check the connection and try again.</div>"; });
+  }
+  async function copyForAi(q, i, mode) {
+    let text;
+    try {
+      await loadStories();
+      const { isNew, more } = storyHits(q, mode);
+      text = storyPrompt(q, i, isNew.concat(more));
+    } catch { toast("Couldn't load the stories"); return; }
+    copyText(text, "Copied. Paste it into your AI chat");
+  }
+  // Clipboard API first; then the old copy command; if both are blocked, show the text selected so it can be copied by hand.
+  async function copyText(text, done) {
+    try { await navigator.clipboard.writeText(text); toast(done); return; } catch { /* try the next way */ }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;";
+    document.body.append(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    ta.remove();
+    if (ok) { toast(done); return; }
+    $("copyText").value = text;
+    $("copyBox").showModal();
+    $("copyText").focus();
+    $("copyText").select();
   }
 
   // ---------- audio: Jon's file first, device voice when there is no file or no network ----------
@@ -391,6 +519,7 @@
     div.className = "acts";
     div.innerHTML = `<a href="${esc(cambridgeUrl(e.w))}" target="_blank" rel="noopener" data-a="ext" data-win="dict_cam">Cambridge</a>` +
       `<a href="${esc(clipartUrl(e.w))}" target="_blank" rel="noopener" data-a="ext" data-win="dict_img">Clipart</a>` +
+      `<button type="button" data-a="aicopy" data-i="${i}">Copy for AI</button>` +
       `<button type="button" data-a="report" data-i="${i}">Report</button>` +
       (lastQuery && !results.hidden && !isIpa(lastQuery) && !e.w.toLowerCase().includes(lastQuery.toLowerCase()) ? `<button type="button" data-a="remember" data-i="${i}">Remember “${esc(lastQuery)}”</button>` : "");
     host.append(div);
@@ -401,6 +530,22 @@
     const a = t.dataset.a;
     const i = t.dataset.i === undefined ? -1 : +t.dataset.i;
     if (a === "play") play(i, t);
+    else if (a === "story") toggleStories(t.closest("[data-card]"), i);
+    else if (a === "stall" || a === "aicopy" || a === "askst") {
+      const p = t.closest(".st");
+      const q = p ? p.dataset.q : entries[i].w;
+      const id = p ? +p.dataset.i : i;
+      const mode = p ? p.dataset.mode : "full";
+      if (a === "stall") {
+        panelMode.set(q + "|" + id, "all");
+        p.outerHTML = storyPanel(q, id, "all");
+      } else if (a === "aicopy") copyForAi(q, id, mode);
+      else {   // Ask AI: the link already carries the question; also copy it in case the chat page drops it
+        const { isNew, more } = storyHits(q, mode);
+        navigator.clipboard?.writeText(storyPrompt(q, id, isNew.concat(more))).catch(() => {});
+        openExternal(ev, t);
+      }
+    }
     else if (a === "vi") {
       if (openVi.has(i)) openVi.delete(i); else openVi.add(i);
       const on = openVi.has(i);
@@ -521,5 +666,8 @@
       worker.onerror = () => { worker = null; if (qBox.value.trim()) runSearch(); };
     } catch { worker = null; }
   }
-  if (location.hash.startsWith("#q=")) { qBox.value = decodeURIComponent(location.hash.slice(3)); runSearch(); }
+  // #q=<words> opens a search (the story reader and the AI guides link here), also when the page is already open
+  const searchFromHash = () => { if (location.hash.startsWith("#q=")) { qBox.value = decodeURIComponent(location.hash.slice(3)); runSearch(); } };
+  searchFromHash();
+  addEventListener("hashchange", searchFromHash);
 })();
